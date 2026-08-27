@@ -1,0 +1,56 @@
+name: Publicar monitor de precios
+
+# Se ejecuta al subir cambios en datos o código, o a mano desde la pestaña Actions
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'datos/**'
+      - 'index.qmd'
+      - 'R/**'
+      - 'custom.scss'
+      - '_quarto.yml'
+      - '.github/workflows/publish.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Traer el repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Instalar R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Instalar paquetes de R (con caché)
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::readxl
+            any::readr
+            any::dplyr
+            any::tidyr
+            any::lubridate
+            any::stringr
+            any::tibble
+            any::ggplot2
+            any::scales
+            any::plotly
+            any::knitr
+            any::rmarkdown
+
+      - name: Renderizar y publicar en GitHub Pages
+        uses: quarto-dev/quarto-actions/publish@v2
+        with:
+          target: gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

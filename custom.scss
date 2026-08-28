@@ -105,3 +105,6 @@ select { font-family: $sys; font-size: 0.95rem; padding: 6px 10px; border: 1px s
 /* título numerado debajo de cada gráfico */
 .grafico-caption { font-size: 0.86rem; color: #5b727c; margin: 0.55rem 0 0.2rem; text-align: left; line-height: 1.4; }
 .grafico-caption b { color: #1e2b2f; }
+
+/* justificación del texto */
+.explica, .lead, .section-lead, .method .step .d, .zona-azul { text-align: justify; }

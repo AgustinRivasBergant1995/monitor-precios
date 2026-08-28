@@ -137,7 +137,7 @@ graficoDesplegable = function(datos, colores, capN, capT) {
   const fechasISO = [...new Set(datos.map(d => d.fecha))].sort();
   const labels = fechasISO.map(ddmm);
   const cats = ["Total (ponderado)"].concat([...new Set(datos.map(d => d.cat))].filter(c => c !== "Total (ponderado)").sort());
-  const sel = Inputs.select(cats, {label: "Sub-subcategoría", value: "Total (ponderado)"});
+  const sel = Inputs.select(cats, {label: "Subcategoría", value: "Total (ponderado)"});
   const tog = Inputs.radio(["Acumulado", "Variación semanal"], {value: "Acumulado"});
   tog.classList.add("pill-toggle");
   const cont = html`<div style="width:100%;height:360px;"></div>`;
@@ -241,12 +241,10 @@ graficoHistograma = function(datos, capN, capT) {
 Monitoreo semanal · Bariloche
 :::
 
-# Los precios de la góndola, semana a semana
+# Seguimiento semanal de precios en supermercados de Bariloche
 
 ::: {.lead}
-Un índice de precios propio para los supermercados de Bariloche, a partir del
-relevamiento de La Anónima y El Todo. Cada semana, cuánto se movió la canasta y
-qué la empujó.
+Un índice de precios a partir del relevamiento de La Anónima y El Todo, las cadenas con más sucursales en Bariloche. Se siguen los productos de consumo cotidiano —los de mayor rotación—, no los bienes durables. Cada semana, cuánto se movió la canasta y qué rubros la explican.
 :::
 
 ::: {.chips}
@@ -279,21 +277,19 @@ Panorama
 ## Todos los precios, ambas cadenas
 
 ::: {.explica}
-El índice general ponderado por la canasta de supermercados, para las dos cadenas
-juntas y para cada una. Con el botón elegís el **acumulado** (base 100) o la
-**variación semanal**.
+El índice general ponderado por la canasta de supermercados, para las dos cadenas juntas y para cada una. Con el botón elegís el **acumulado** (base 100) o la **variación semanal**.
 :::
 
 ```{ojs}
 graficoLineas(transpose(panorama), ["Ambos", "La Anónima", "El Todo"],
-  {"Ambos": "#1f5673", "La Anónima": "#3d6b4f", "El Todo": "#e07a5f"},
+  {"Ambos": "#3d6b4f", "La Anónima": "#1f5673", "El Todo": "#e07a5f"},
   1, "Índice general de precios de supermercados, por cadena.")
 ```
 
 ::: {.kicker}
 Alimentos y bebidas no alcohólicas
 :::
-## El corazón de la canasta
+## El principal rubro de la canasta
 
 ::: {.centro-stat}
 ```{r}
@@ -301,16 +297,15 @@ Alimentos y bebidas no alcohólicas
 cls2 <- function(x) if (is.na(x)) "flat" else if (x >= 0) "up" else "down"
 p2  <- function(x) if (is.na(x)) "s/d" else sprintf("%+.2f%%", x)
 cat('<div class="stats" style="grid-template-columns:repeat(2,minmax(160px,240px));margin:0.4rem 0 1.4rem;">')
-cat(sprintf('<div class="stat"><div class="num %s">%s</div><div class="lbl">Variación semanal · alimentos</div></div>', cls2(var_sem_alim), p2(var_sem_alim)))
-cat(sprintf('<div class="stat"><div class="num flat">%s</div><div class="lbl">Variación mensual · alimentos</div></div>', p2(vm_alim)))
+cat(sprintf('<div class="stat"><div class="num %s">%s</div><div class="lbl">Variación semanal · AyBNA</div></div>', cls2(var_sem_alim), p2(var_sem_alim)))
+cat(sprintf('<div class="stat"><div class="num flat">%s</div><div class="lbl">Variación mensual · AyBNA</div></div>', p2(vm_alim)))
 cat('</div>')
 ```
 :::
 
 ::: {.explica}
 El rubro de mayor peso, ponderado por su propia canasta. Elegí una
-sub-subcategoría (o el **total** del rubro) en el desplegable, y con el botón
-alterná entre acumulado y variación semanal. Cada categoría conserva su color.
+subcategoría (o el **total** del rubro) en el desplegable, y con el botón alterná entre acumulado y variación semanal.
 :::
 
 ```{ojs}
@@ -322,7 +317,7 @@ coloresAlim = {
 ```
 
 ```{ojs}
-graficoDesplegable(transpose(alimSub), coloresAlim, 2, "Alimentos y bebidas no alcohólicas, por sub-subcategoría.")
+graficoDesplegable(transpose(alimSub), coloresAlim, 2, "Alimentos y bebidas no alcohólicas, por subcategoría.")
 ```
 
 ::: {.kicker}
@@ -331,13 +326,12 @@ Bebidas alcohólicas y tabaco
 ## Vinos, cerveza y espirituosas
 
 ::: {.explica}
-Las sub-subcategorías del rubro, todas juntas (variaciones crudas). El botón
-alterna entre acumulado y variación semanal.
+Las subcategorías del rubro, todas juntas (variaciones crudas). El botón alterna entre acumulado y variación semanal.
 :::
 
 ```{ojs}
 { const d = transpose(alcSub); const cats = [...new Set(d.map(x => x.cat))]; const col = {}; cats.forEach((c, i) => col[c] = PAL_ECH[i % PAL_ECH.length]);
-  return graficoLineas(d, cats, col, 3, "Bebidas alcohólicas y tabaco, por sub-subcategoría."); }
+  return graficoLineas(d, cats, col, 3, "Bebidas alcohólicas y tabaco, por subcategoría."); }
 ```
 
 ::: {.explica}
@@ -357,12 +351,12 @@ Otras categorías seguidas
 ## Limpieza, cuidado personal, mascotas y farmacia
 
 ::: {.explica}
-Cuatro sub-subcategorías de alto peso seguidas por separado (variaciones crudas).
+Cuatro subcategorías de alto consumo, seguidas por separado (variaciones crudas). **Limpieza** reúne los productos para el hogar (ropa, vajilla, pisos); **Cuidado personal**, artículos como shampoo, desodorantes, jabones y protección femenina; **Mascotas**, el alimento balanceado; y **Farmacia**, ítems de venta libre como algodón y alcohol.
 :::
 
 ```{ojs}
 { const d = transpose(otrSub); const cats = [...new Set(d.map(x => x.cat))]; const col = {}; cats.forEach((c, i) => col[c] = PAL_ECH[i % PAL_ECH.length]);
-  return graficoLineas(d, cats, col, 5, "Limpieza, cuidado personal, mascotas y farmacia, por sub-subcategoría."); }
+  return graficoLineas(d, cats, col, 5, "Limpieza, cuidado personal, mascotas y farmacia, por subcategoría."); }
 ```
 
 ::: {.explica}
@@ -382,24 +376,20 @@ Mapa de calor
 ## Qué se movió y cuándo
 
 ::: {.explica}
-Cada celda es la variación de una sub-subcategoría en una semana, para las dos
-cadenas juntas. Rojo = subió, verde = bajó. Se muestran las últimas semanas,
-ordenadas por cuánto acumularon.
+Cada celda es la variación de una subcategoría en una semana, para las dos cadenas juntas. Rojo = subió, verde = bajó. Se muestran las últimas semanas, ordenadas por cuánto acumularon.
 :::
 
 ```{ojs}
-graficoHeatmap(transpose(heat).map(d => ({cat: d.cat, fecha: d.fecha, var: +d.var})), 7, "Mapa de calor: variación semanal por sub-subcategoría.")
+graficoHeatmap(transpose(heat).map(d => ({cat: d.cat, fecha: d.fecha, var: +d.var})), 7, "Mapa de calor: variación semanal por subcategoría.")
 ```
 
 ::: {.kicker}
 Extra
 :::
-## ¿Qué empujó el índice?
+## Incidencia
 
 ::: {.explica}
-No es lo mismo *qué subió más* que *qué movió el número*: una categoría de mucho
-peso mueve el índice aunque cambie poco. Acá, la contribución de cada rubro a la
-variación de la última semana, en puntos porcentuales.
+No es lo mismo *qué subió más* que *qué movió el número*: una categoría de mucho peso mueve el índice aunque cambie poco. Acá, la contribución de cada rubro a la variación de la última semana, en puntos porcentuales.
 :::
 
 ```{ojs}
@@ -412,9 +402,7 @@ Rojo: empujó los precios hacia arriba · Verde: hacia abajo.
 ## Distribución de los cambios de precio
 
 ::: {.explica}
-A nivel producto: de los SKU que cambiaron de precio esta semana, cuántos lo
-hicieron y en qué magnitud. La mayoría no se mueve cada semana; los que sí, se
-reparten entre subas y bajas.
+A nivel producto: de los SKU que cambiaron de precio esta semana, cuántos lo hicieron y en qué magnitud. La mayoría no se mueve cada semana; los que sí, se reparten entre subas y bajas.
 :::
 
 ```{ojs}
@@ -435,7 +423,7 @@ Metodología
 Relevamiento
 :::
 ::: {.d}
-Scraping semanal de La Anónima y El Todo, clasificado en COICOP. Se excluyen sub-subcategorías sin correspondencia entre cadenas y artículos sin precio.
+Scraping semanal de La Anónima y El Todo, clasificado en COICOP con apertura nivel *Clase*. Se excluyen del relevamiento bienes durables comercializados por los supermercados, como electrodomesticos, indumentaria, articulos de ferretería, esparcimiento, educación, entre otros.
 :::
 :::
 ::: {.step}
@@ -446,7 +434,7 @@ Scraping semanal de La Anónima y El Todo, clasificado en COICOP. Se excluyen su
 Índice elemental
 :::
 ::: {.d}
-Jevons (media geométrica de relativos) por sub-subcategoría, encadenado (base 100). Faltantes rellenados con la semana contigua.
+Jevons (media geométrica de relativos) por subcategoría, encadenado (base 100). Los precios faltantes son rellenados con la semana contigua.
 :::
 :::
 ::: {.step}
@@ -457,7 +445,7 @@ Jevons (media geométrica de relativos) por sub-subcategoría, encadenado (base 
 Ponderación
 :::
 ::: {.d}
-El índice general y el de alimentos agregan los elementales como promedio ponderado por la canasta correspondiente.
+El índice general y el de alimentos agregan los elementales como promedio ponderado por la canasta correspondiente. Las ponderaciones se construyen con los microdatos de la Encuesta Nacional de Gasto de los Hogares 2017/2018 (ENGHo 2017/2018).
 :::
 :::
 ::: {.step}
@@ -468,13 +456,11 @@ El índice general y el de alimentos agregan los elementales como promedio ponde
 Cortes
 :::
 ::: {.d}
-Por cadena, por sub-subcategoría, mapa de calor, incidencia por rubro y distribución de cambios a nivel producto.
+Por cadena, por subcategoría, mapa de calor, incidencia por rubro y distribución de cambios a nivel producto.
 :::
 :::
 :::
 
 ::: {.zona-azul}
-**Monitor de precios de supermercados de Bariloche** · Elaboración propia.
-Índice Jevons encadenado con agregación ponderada por canasta. Los valores son
-variaciones respecto del relevamiento anterior.
+**Monitor de precios de supermercados de Bariloche** · Elaboración propia. Índice Jevons encadenado con agregación ponderada por canasta. Los valores son variaciones respecto del relevamiento anterior. Contacto: agustinrivas73@gmail.com
 :::

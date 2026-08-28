@@ -6,6 +6,9 @@ format:
     page-layout: article
     toc: false
     title-block-style: none
+    include-in-header:
+      text: |
+        <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
 execute:
   echo: false
   warning: false
@@ -15,24 +18,12 @@ execute:
 ```{r}
 #| label: setup
 #| include: false
-library(ggplot2); library(stringr); library(scales); library(plotly)
+library(dplyr); library(stringr)
 source("R/indices.R")
 
 df     <- cargar_bases()
 ind    <- indicadores(df)
 ultima <- max(df$fecha)
-idx_gen <- indice_ponderado(df, PESOS_GENERAL, grupo_general)
-al  <- filter(df, subsub_grupo == "alimentos")
-alc <- filter(df, subsub_grupo == "alcoholicas")
-otr <- filter(df, subsub_grupo == "otras")
-
-# acumulado ponderado del rubro alimentos y bebidas no alcohólicas
-acum_alim <- tail(indice_ponderado(sub_rubro(df, "01"), PESOS_ALIM, grupo_alim)$indice, 1) - 100
-
-brand <- "#15616D"; naranja <- "#D98C3B"; suba <- "#C0392B"; baja <- "#1E8449"
-col_serie <- c("Ambos" = "#333333", "La Anonima" = brand, "El Todo" = naranja)
-pal <- c("#15616D","#D98C3B","#C0392B","#1E8449","#7E6BA8","#2C6E8F","#C9A227",
-         "#5DA5A5","#B5651D","#8E9B4C","#A34A6B")
 
 ABREV <- c(
   "Leche, productos lácteos, huevos y alimentos vegetales" = "Leche, lácteos y huevos",
@@ -42,59 +33,223 @@ ABREV <- c(
   "Verduras, tubérculos y legumbres"                       = "Verduras y legumbres")
 abrev <- function(x) ifelse(x %in% names(ABREV), unname(ABREV[x]), x)
 
-theme_set(theme_minimal(base_size = 15))
-FUENTE <- "Fraunces, Georgia, serif"
+al  <- filter(df, subsub_grupo == "alimentos")
+alc <- filter(df, subsub_grupo == "alcoholicas")
+otr <- filter(df, subsub_grupo == "otras")
 
-# estilo común: alto fijo (sin scroll), fuente, y líneas suaves (spline) si suave=TRUE
-estilo <- function(p, ml = 60, alto = 340, suave = TRUE) {
-  p <- p |>
-    layout(font = list(family = FUENTE, size = 15),
-           paper_bgcolor = "white", plot_bgcolor = "white",
-           legend = list(font = list(size = 13)),
-           margin = list(l = ml, r = 20, t = 25, b = 45),
-           hoverlabel = list(font = list(family = FUENTE, size = 14)),
-           height = alto, autosize = TRUE) |>
-    config(displayModeBar = FALSE, responsive = TRUE)
-  if (suave) p <- plotly::style(p, line = list(shape = "spline", smoothing = 1.3))
-  p
+idx_alim <- indice_ponderado(sub_rubro(df, "01"), PESOS_ALIM, grupo_alim)
+var_sem_alim <- tail(idx_alim$var_pct, 1)
+vm_alim <- tail(var_mensual(idx_alim)$var_mensual, 1)
+
+panorama <- bind_rows(
+  indice_ponderado(df, PESOS_GENERAL, grupo_general) |> mutate(cat = "Ambos"),
+  indice_ponderado(filter(df, supermercado == "La Anonima"), PESOS_GENERAL, grupo_general) |> mutate(cat = "La Anónima"),
+  indice_ponderado(filter(df, supermercado == "El Todo"),    PESOS_GENERAL, grupo_general) |> mutate(cat = "El Todo")) |>
+  transmute(cat, fecha = as.character(fecha), acumulado = indice, variacion = var_pct)
+
+alimSub <- bind_rows(
+  indice_encadenado(sub_rubro(df, "01"), "subsub_lbl") |> transmute(cat = abrev(subsub_lbl), fecha = as.character(fecha), acumulado = indice, variacion = var_pct),
+  indice_ponderado(sub_rubro(df, "01"), PESOS_ALIM, grupo_alim) |> transmute(cat = "Total (ponderado)", fecha = as.character(fecha), acumulado = indice, variacion = var_pct))
+
+alcSub <- indice_encadenado(alc, "subsub_lbl") |> transmute(cat = abrev(subsub_lbl), fecha = as.character(fecha), acumulado = indice, variacion = var_pct)
+otrSub <- indice_encadenado(otr, "subsub_lbl") |> transmute(cat = abrev(subsub_lbl), fecha = as.character(fecha), acumulado = indice, variacion = var_pct)
+alcVar <- var_semanal_subsub(alc, ultima) |> transmute(cat = abrev(subsub_lbl), valor = var_pct)
+otrVar <- var_semanal_subsub(otr, ultima) |> transmute(cat = abrev(subsub_lbl), valor = var_pct)
+
+SEM_HEAT <- 8
+heat0 <- indice_encadenado(filter(df, !is.na(subsub_grupo)), "subsub_lbl")
+fechas_heat <- sort(unique(heat0$fecha)); fechas_heat <- tail(fechas_heat[-1], SEM_HEAT)
+heat <- heat0 |> filter(fecha %in% fechas_heat) |> transmute(cat = abrev(subsub_lbl), fecha = format(fecha, "%d/%m"), var = var_pct)
+
+lookup <- df |> distinct(code, subsub_lbl)
+incid <- df |> mutate(grupo = grupo_general(code)) |> filter(!is.na(grupo)) |>
+  indice_encadenado("grupo") |> filter(fecha == ultima) |> select(grupo, var_pct) |>
+  inner_join(PESOS_GENERAL, by = "grupo") |> left_join(lookup, by = c("grupo" = "code")) |>
+  mutate(nombre = case_when(grupo == "02" ~ "Bebidas alcohólicas", !is.na(subsub_lbl) ~ subsub_lbl, TRUE ~ grupo),
+         w = peso / sum(peso), contrib = w * var_pct) |>
+  transmute(cat = abrev(nombre), valor = contrib)
+
+distrib <- cambios_ultima_semana(df) |> filter(tipo != "Sin cambio") |>
+  mutate(delta = pmax(pmin(delta, 30), -30), signo = ifelse(delta >= 0, "Subió", "Bajó")) |>
+  transmute(delta, signo)
+
+ojs_define(panorama = panorama); ojs_define(alimSub = alimSub)
+ojs_define(alcSub = alcSub); ojs_define(otrSub = otrSub)
+ojs_define(alcVar = alcVar); ojs_define(otrVar = otrVar)
+ojs_define(heat = heat); ojs_define(incid = incid); ojs_define(distrib = distrib)
+```
+
+```{ojs}
+//| output: false
+FUENTE_G = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+PAL_ECH = ["#1f5673","#3d6b4f","#e07a5f","#6b8fa3","#8c6d4f","#5b8266","#a0563f","#7a9e9f","#b5895f","#4f6b52","#9a6b8f"]
+SUBA = "#c0503f"; BAJA = "#3d8168"
+
+montar = function(cont, getOption, controles) {
+  requestAnimationFrame(() => {
+    const chart = window.echarts.init(cont);
+    const dibujar = () => chart.setOption(getOption(), true);
+    (controles || []).forEach(c => c.addEventListener("input", dibujar));
+    dibujar();
+    new ResizeObserver(() => chart.resize()).observe(cont);
+  });
 }
 
-lineas_plotly <- function(dfg, ml = 60, alto = 320) {
-  g <- indice_encadenado(dfg, "subsub_lbl") |> mutate(cat = abrev(subsub_lbl))
-  p <- ggplot(g, aes(fecha, indice, colour = cat, group = cat,
-                     text = sprintf("%s — %s: %.2f", format(fecha, "%d/%m"), cat, indice))) +
-    geom_line(linewidth = 1) +
-    scale_colour_manual(values = pal) + scale_x_date(date_labels = "%d/%m") +
-    labs(x = NULL, y = "Índice (base 100)")
-  ggplotly(p, tooltip = "text") |> estilo(ml, alto = alto)
+ddmm = (f) => { const p = f.split("-"); return p[2] + "/" + p[1]; }
+
+baseLineas = function(esAcum, colores, labels, seriesArr) {
+  return {
+    color: colores,
+    textStyle: {fontFamily: FUENTE_G, color: "#1e2b2f"},
+    grid: {left: 66, right: 22, top: 38, bottom: 34},
+    legend: {top: 4, icon: "roundRect", itemWidth: 14, itemHeight: 8, textStyle: {color: "#45606b"}, type: "scroll"},
+    tooltip: {trigger: "axis", valueFormatter: (v) => v == null ? "–" : (esAcum ? (+v).toFixed(2) : (v >= 0 ? "+" : "") + (+v).toFixed(2) + "%")},
+    xAxis: {type: "category", data: labels, boundaryGap: false, axisLine: {lineStyle: {color: "#d4cfc6"}}, axisTick: {show: false}, axisLabel: {color: "#5b727c"}},
+    yAxis: {type: "value", scale: true, name: esAcum ? "Índice (base 100)" : "Variación semanal (%)",
+            nameLocation: "middle", nameGap: 48, nameRotate: 90, nameTextStyle: {color: "#8a9aa2", fontSize: 12},
+            axisLabel: {color: "#5b727c"}, splitLine: {lineStyle: {color: "#ece7de"}}},
+    series: seriesArr.map(s => ({
+      name: s.name, type: "line", smooth: true, symbol: "circle", symbolSize: 7, lineStyle: {width: 3}, emphasis: {focus: "series"},
+      markLine: esAcum ? undefined : {silent: true, symbol: "none", lineStyle: {color: "#c9d6dd", type: "dashed"}, data: [{yAxis: 0}]},
+      data: s.data
+    }))
+  };
 }
 
-barras_plotly <- function(dfg, ml = 190, alto = 340) {
-  v <- var_semanal_subsub(dfg, ultima) |>
-    mutate(cat = abrev(subsub_lbl),
-           cat = factor(cat, levels = cat[order(var_pct)]),
-           signo = var_pct >= 0)
-  p <- ggplot(v, aes(var_pct, cat, fill = signo,
-                     text = sprintf("%s: %+.2f%%", cat, var_pct))) +
-    geom_col(width = 0.72) +
-    scale_fill_manual(values = c(`TRUE` = suba, `FALSE` = baja), guide = "none") +
-    labs(x = "Variación semanal (%)", y = NULL)
-  ggplotly(p, tooltip = "text") |> estilo(ml, alto = alto, suave = FALSE)
+graficoLineas = function(datos, cats, colores, capN, capT) {
+  const fechasISO = [...new Set(datos.map(d => d.fecha))].sort();
+  const labels = fechasISO.map(ddmm);
+  const val = (cat, campo, f) => { const r = datos.find(d => d.cat === cat && d.fecha === f); return r && r[campo] != null ? +r[campo] : null; };
+  const tog = Inputs.radio(["Acumulado", "Variación semanal"], {value: "Acumulado"});
+  tog.classList.add("pill-toggle");
+  const cont = html`<div style="width:100%;height:370px;"></div>`;
+  const cap = html`<div class="grafico-caption"><b>Gráfico ${capN}.</b> ${capT}</div>`;
+  const getOption = () => {
+    const esAcum = tog.value === "Acumulado";
+    const campo = esAcum ? "acumulado" : "variacion";
+    return baseLineas(esAcum, cats.map(c => colores[c]), labels, cats.map(c => ({name: c, data: fechasISO.map(f => val(c, campo, f))})));
+  };
+  montar(cont, getOption, [tog]);
+  return html`<div>${tog}${cont}${cap}</div>`;
+}
+
+graficoDesplegable = function(datos, colores, capN, capT) {
+  const fechasISO = [...new Set(datos.map(d => d.fecha))].sort();
+  const labels = fechasISO.map(ddmm);
+  const cats = ["Total (ponderado)"].concat([...new Set(datos.map(d => d.cat))].filter(c => c !== "Total (ponderado)").sort());
+  const sel = Inputs.select(cats, {label: "Sub-subcategoría", value: "Total (ponderado)"});
+  const tog = Inputs.radio(["Acumulado", "Variación semanal"], {value: "Acumulado"});
+  tog.classList.add("pill-toggle");
+  const cont = html`<div style="width:100%;height:360px;"></div>`;
+  const cap = html`<div class="grafico-caption"><b>Gráfico ${capN}.</b> ${capT}</div>`;
+  const getOption = () => {
+    const esAcum = tog.value === "Acumulado";
+    const campo = esAcum ? "acumulado" : "variacion";
+    const cat = sel.value;
+    const color = colores[cat] || "#1f5673";
+    const dd = fechasISO.map(f => { const r = datos.find(d => d.cat === cat && d.fecha === f); return r && r[campo] != null ? +r[campo] : null; });
+    return {
+      color: [color], textStyle: {fontFamily: FUENTE_G, color: "#1e2b2f"},
+      grid: {left: 66, right: 22, top: 20, bottom: 34},
+      tooltip: {trigger: "axis", valueFormatter: (v) => v == null ? "–" : (esAcum ? (+v).toFixed(2) : (v >= 0 ? "+" : "") + (+v).toFixed(2) + "%")},
+      xAxis: {type: "category", data: labels, boundaryGap: false, axisLine: {lineStyle: {color: "#d4cfc6"}}, axisTick: {show: false}, axisLabel: {color: "#5b727c"}},
+      yAxis: {type: "value", scale: true, name: esAcum ? "Índice (base 100)" : "Variación semanal (%)",
+              nameLocation: "middle", nameGap: 48, nameRotate: 90, nameTextStyle: {color: "#8a9aa2", fontSize: 12},
+              axisLabel: {color: "#5b727c"}, splitLine: {lineStyle: {color: "#ece7de"}}},
+      series: [{type: "line", smooth: true, symbol: "circle", symbolSize: 8, lineStyle: {width: 3}, areaStyle: {opacity: 0.12},
+                markLine: esAcum ? undefined : {silent: true, symbol: "none", lineStyle: {color: "#c9d6dd", type: "dashed"}, data: [{yAxis: 0}]},
+                data: dd}]
+    };
+  };
+  montar(cont, getOption, [sel, tog]);
+  return html`<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">${tog}${sel}</div>${cont}${cap}`;
+}
+
+graficoBarras = function(datos, capN, capT, opts) {
+  const {xlabel = "Variación semanal (%)", suf = "%"} = (opts || {});
+  const orden = datos.slice().sort((a, b) => a.valor - b.valor);
+  const cats = orden.map(d => d.cat);
+  const vals = orden.map(d => +d.valor);
+  const cont = html`<div style="width:100%;height:${Math.max(200, datos.length * 34 + 70)}px;"></div>`;
+  const cap = html`<div class="grafico-caption"><b>Gráfico ${capN}.</b> ${capT}</div>`;
+  const getOption = () => ({
+    textStyle: {fontFamily: FUENTE_G, color: "#1e2b2f"},
+    grid: {left: 200, right: 40, top: 12, bottom: 44},
+    tooltip: {trigger: "axis", axisPointer: {type: "shadow"}, valueFormatter: (v) => (v >= 0 ? "+" : "") + (+v).toFixed(2) + suf},
+    xAxis: {type: "value", name: xlabel, nameLocation: "middle", nameGap: 30, axisLabel: {color: "#5b727c", formatter: (v) => (v >= 0 ? "+" : "") + v + suf},
+            splitLine: {lineStyle: {color: "#ece7de"}}, axisLine: {show: false}},
+    yAxis: {type: "category", data: cats, axisLabel: {color: "#5b727c"}, axisLine: {lineStyle: {color: "#d4cfc6"}}, axisTick: {show: false}},
+    series: [{type: "bar", barWidth: "62%",
+              data: vals.map(v => ({value: v, itemStyle: {color: v >= 0 ? SUBA : BAJA, borderRadius: v >= 0 ? [0, 4, 4, 0] : [4, 0, 0, 4]}}))}]
+  });
+  montar(cont, getOption, []);
+  return html`<div>${cont}${cap}</div>`;
+}
+
+graficoHeatmap = function(datos, capN, capT) {
+  const xdom = [...new Set(datos.map(d => d.fecha))];
+  const suma = {}; datos.forEach(d => suma[d.cat] = (suma[d.cat] || 0) + (+d.var));
+  const ydom = Object.keys(suma).sort((a, b) => suma[a] - suma[b]);
+  const M = Math.max(...datos.map(d => Math.abs(+d.var)), 0.1);
+  const data = datos.map(d => [xdom.indexOf(d.fecha), ydom.indexOf(d.cat), +(+d.var).toFixed(2)]);
+  const cont = html`<div style="width:100%;height:${ydom.length * 28 + 140}px;"></div>`;
+  const cap = html`<div class="grafico-caption"><b>Gráfico ${capN}.</b> ${capT}</div>`;
+  const getOption = () => ({
+    textStyle: {fontFamily: FUENTE_G, color: "#1e2b2f"},
+    grid: {left: 200, right: 26, top: 18, bottom: 74},
+    tooltip: {position: "top", formatter: (p) => ydom[p.value[1]] + " · " + xdom[p.value[0]] + ": " + (p.value[2] >= 0 ? "+" : "") + p.value[2] + "%"},
+    xAxis: {type: "category", data: xdom, axisLabel: {color: "#5b727c"}, axisLine: {lineStyle: {color: "#d4cfc6"}}, axisTick: {show: false}},
+    yAxis: {type: "category", data: ydom, axisLabel: {color: "#5b727c"}, axisLine: {lineStyle: {color: "#d4cfc6"}}, axisTick: {show: false}},
+    visualMap: {min: -M, max: M, calculable: true, orient: "horizontal", left: "center", bottom: 12,
+                inRange: {color: [BAJA, "#f7f4ef", SUBA]}, text: ["sube", "baja"], textStyle: {color: "#5b727c"}},
+    series: [{type: "heatmap", data: data, label: {show: true, formatter: (p) => p.value[2].toFixed(1), fontSize: 9, color: "#2a2a2a"},
+              itemStyle: {borderColor: "#fff", borderWidth: 1}, emphasis: {itemStyle: {borderColor: "#1e2b2f", borderWidth: 1.5}}}]
+  });
+  montar(cont, getOption, []);
+  return html`<div>${cont}${cap}</div>`;
+}
+
+graficoHistograma = function(datos, capN, capT) {
+  const min = -30, max = 30, w = 2, nb = (max - min) / w;
+  const bs = new Array(nb).fill(0), bb = new Array(nb).fill(0);
+  datos.forEach(d => { const i = Math.min(nb - 1, Math.max(0, Math.floor((+d.delta - min) / w))); if (d.signo === "Subió") bs[i]++; else bb[i]++; });
+  const centros = Array.from({length: nb}, (_, i) => (min + w * i + w / 2).toFixed(0));
+  const cont = html`<div style="width:100%;height:320px;"></div>`;
+  const cap = html`<div class="grafico-caption"><b>Gráfico ${capN}.</b> ${capT}</div>`;
+  const getOption = () => ({
+    textStyle: {fontFamily: FUENTE_G, color: "#1e2b2f"},
+    grid: {left: 56, right: 20, top: 34, bottom: 44},
+    legend: {top: 4, textStyle: {color: "#45606b"}},
+    tooltip: {trigger: "axis", axisPointer: {type: "shadow"}},
+    xAxis: {type: "category", data: centros, name: "Variación del precio (%)", nameLocation: "middle", nameGap: 28,
+            axisLabel: {color: "#5b727c"}, axisLine: {lineStyle: {color: "#d4cfc6"}}, axisTick: {show: false}},
+    yAxis: {type: "value", name: "Cantidad de SKU", nameLocation: "middle", nameGap: 40, nameRotate: 90, nameTextStyle: {color: "#8a9aa2"},
+            axisLabel: {color: "#5b727c"}, splitLine: {lineStyle: {color: "#ece7de"}}},
+    series: [
+      {name: "Subió", type: "bar", stack: "x", data: bs, itemStyle: {color: SUBA}, barCategoryGap: "8%"},
+      {name: "Bajó", type: "bar", stack: "x", data: bb, itemStyle: {color: BAJA}, barCategoryGap: "8%"}
+    ]
+  });
+  montar(cont, getOption, []);
+  return html`<div>${cont}${cap}</div>`;
 }
 ```
 
-::: hero
-::: eyebrow
+::::: {.zona-verde}
+
+::: {.eyebrow}
 Monitoreo semanal · Bariloche
 :::
+
 # Los precios de la góndola, semana a semana
 
-::: lead
+::: {.lead}
 Un índice de precios propio para los supermercados de Bariloche, a partir del
 relevamiento de La Anónima y El Todo. Cada semana, cuánto se movió la canasta y
 qué la empujó.
 :::
-::: chips
+
+::: {.chips}
 ```{r}
 #| output: asis
 cat(sprintf('<span class="chip">Última semana: %s</span>', format(ultima, "%d/%m/%Y")),
@@ -102,7 +257,6 @@ cat(sprintf('<span class="chip">Última semana: %s</span>', format(ultima, "%d/%
     '<span class="chip">La Anónima · El Todo</span>',
     '<span class="chip">Índice ponderado</span>')
 ```
-:::
 :::
 
 ```{r}
@@ -117,186 +271,210 @@ cat(sprintf('<div class="stat"><div class="num flat">%.0f%%</div><div class="lbl
 cat('</div>')
 ```
 
-::: kicker
+:::::
+
+::: {.kicker}
 Panorama
 :::
-## Cómo evoluciona la canasta
+## Todos los precios, ambas cadenas
 
-::: section-lead
-Índice general ponderado por la canasta de supermercados, encadenado semana a
-semana desde el primer relevamiento (base 100).
+::: {.explica}
+El índice general ponderado por la canasta de supermercados, para las dos cadenas
+juntas y para cada una. Con el botón elegís el **acumulado** (base 100) o la
+**variación semanal**.
 :::
 
-```{r}
-p <- ggplot(idx_gen, aes(fecha, indice, group = 1,
-                         text = sprintf("%s: %.2f", format(fecha, "%d/%m"), indice))) +
-  geom_line(linewidth = 1.3, colour = brand) + geom_point(size = 2.4, colour = brand) +
-  scale_x_date(date_labels = "%d/%m") + labs(x = NULL, y = "Índice (base 100)")
-ggplotly(p, tooltip = "text") |> estilo()
+```{ojs}
+graficoLineas(transpose(panorama), ["Ambos", "La Anónima", "El Todo"],
+  {"Ambos": "#1f5673", "La Anónima": "#3d6b4f", "El Todo": "#e07a5f"},
+  1, "Índice general de precios de supermercados, por cadena.")
 ```
 
-::: kicker
+::: {.kicker}
 Alimentos y bebidas no alcohólicas
 :::
 ## El corazón de la canasta
 
+::: {.centro-stat}
 ```{r}
 #| output: asis
-cat(sprintf('<div class="stats" style="grid-template-columns:minmax(220px,340px);margin:0.4rem 0 1.5rem;"><div class="stat"><div class="num %s">%+.2f%%</div><div class="lbl">Acumulado del período · alimentos y bebidas no alcohólicas</div></div></div>',
-            if (is.na(acum_alim)) "flat" else if (acum_alim >= 0) "up" else "down", acum_alim))
+cls2 <- function(x) if (is.na(x)) "flat" else if (x >= 0) "up" else "down"
+p2  <- function(x) if (is.na(x)) "s/d" else sprintf("%+.2f%%", x)
+cat('<div class="stats" style="grid-template-columns:repeat(2,minmax(160px,240px));margin:0.4rem 0 1.4rem;">')
+cat(sprintf('<div class="stat"><div class="num %s">%s</div><div class="lbl">Variación semanal · alimentos</div></div>', cls2(var_sem_alim), p2(var_sem_alim)))
+cat(sprintf('<div class="stat"><div class="num flat">%s</div><div class="lbl">Variación mensual · alimentos</div></div>', p2(vm_alim)))
+cat('</div>')
 ```
-
-::: section-lead
-El rubro de mayor peso, ponderado por su propia canasta. Primero el acumulado
-para ambas cadenas y cada una; después, elegí una sub-subcategoría (o el total)
-en el desplegable.
 :::
 
-```{r}
-d3 <- indice_alim_cadenas(df) |>
-  mutate(serie_lbl = recode(serie, "La Anonima" = "La Anónima"))
-p <- ggplot(d3, aes(fecha, indice, colour = serie, group = serie,
-                    text = sprintf("%s — %s: %.2f", format(fecha, "%d/%m"), serie_lbl, indice))) +
-  geom_line(linewidth = 1.2) + geom_point(size = 2) +
-  scale_colour_manual(values = col_serie, breaks = c("Ambos","La Anonima","El Todo"),
-                      labels = c("Ambos","La Anónima","El Todo")) +
-  scale_x_date(date_labels = "%d/%m") + labs(x = NULL, y = "Índice (base 100)")
-ggplotly(p, tooltip = "text") |> estilo()
-```
+::: {.explica}
+El rubro de mayor peso, ponderado por su propia canasta. Elegí una
+sub-subcategoría (o el **total** del rubro) en el desplegable, y con el botón
+alterná entre acumulado y variación semanal. Cada categoría conserva su color.
+:::
 
-```{r}
-# Desplegable (selector): una sub-subcategoría a la vez, o el total. Sin hover.
-dd <- bind_rows(
-  indice_encadenado(sub_rubro(df, "01"), "subsub_lbl") |> transmute(cat = abrev(subsub_lbl), fecha, indice),
-  indice_ponderado(sub_rubro(df, "01"), PESOS_ALIM, grupo_alim) |> transmute(cat = "Total (ponderado)", fecha, indice))
-cats <- c("Total (ponderado)", sort(setdiff(unique(dd$cat), "Total (ponderado)")))
-pl <- plot_ly()
-for (i in seq_along(cats)) {
-  di <- filter(dd, cat == cats[i])
-  pl <- add_trace(pl, x = di$fecha, y = di$indice, type = "scatter", mode = "lines+markers",
-                  name = cats[i], visible = (i == 1),
-                  line = list(color = brand, width = 3, shape = "spline"),
-                  marker = list(color = brand), hoverinfo = "skip")
+```{ojs}
+coloresAlim = {
+  const cs = [...new Set(transpose(alimSub).map(d => d.cat))].filter(c => c !== "Total (ponderado)").sort();
+  const o = {}; cs.forEach((c, i) => o[c] = PAL_ECH[i % PAL_ECH.length]); o["Total (ponderado)"] = "#2f5340";
+  return o;
 }
-btns <- lapply(seq_along(cats), function(i) {
-  vis <- as.list(rep(FALSE, length(cats))); vis[[i]] <- TRUE
-  list(method = "restyle", args = list(list(visible = vis)), label = cats[i])
-})
-pl |> layout(font = list(family = FUENTE, size = 15), showlegend = FALSE,
-             paper_bgcolor = "white", plot_bgcolor = "white", hovermode = FALSE,
-             height = 360, autosize = TRUE,
-             xaxis = list(title = "", tickformat = "%d/%m"),
-             yaxis = list(title = "Índice (base 100)"),
-             margin = list(l = 60, r = 20, t = 55, b = 45),
-             updatemenus = list(list(active = 0, buttons = btns, x = 0, y = 1.22,
-                                     xanchor = "left", bgcolor = "#ffffff",
-                                     font = list(family = FUENTE, size = 14)))) |>
-  config(displayModeBar = FALSE, responsive = TRUE)
 ```
 
-::: section-lead
-Variación de la última semana, por sub-subcategoría:
-:::
-
-```{r}
-barras_plotly(al, ml = 190, alto = 430)
+```{ojs}
+graficoDesplegable(transpose(alimSub), coloresAlim, 2, "Alimentos y bebidas no alcohólicas, por sub-subcategoría.")
 ```
 
-::: kicker
+::: {.kicker}
 Bebidas alcohólicas y tabaco
 :::
 ## Vinos, cerveza y espirituosas
 
-::: section-lead
-Acumulado por sub-subcategoría (variaciones crudas, sin ponderar).
+::: {.explica}
+Las sub-subcategorías del rubro, todas juntas (variaciones crudas). El botón
+alterna entre acumulado y variación semanal.
 :::
 
-```{r}
-lineas_plotly(alc)
+```{ojs}
+{ const d = transpose(alcSub); const cats = [...new Set(d.map(x => x.cat))]; const col = {}; cats.forEach((c, i) => col[c] = PAL_ECH[i % PAL_ECH.length]);
+  return graficoLineas(d, cats, col, 3, "Bebidas alcohólicas y tabaco, por sub-subcategoría."); }
 ```
 
-::: section-lead
-Variación de la última semana:
+::: {.explica}
+Ranking de la última semana: qué subió y qué bajó dentro del rubro.
 :::
 
-```{r}
-barras_plotly(alc, ml = 160, alto = 240)
+```{ojs}
+graficoBarras(transpose(alcVar).map(d => ({cat: d.cat, valor: +d.valor})), 4, "Bebidas alcohólicas: variación de la última semana.")
 ```
+::: {.nota}
+Rojo: suba de precios · Verde: baja.
+:::
 
-::: kicker
+::: {.kicker}
 Otras categorías seguidas
 :::
-## Cuidado personal, hogar, mascotas y farmacia
+## Limpieza, cuidado personal, mascotas y farmacia
 
-::: section-lead
-Acumulado por sub-subcategoría (variaciones crudas).
+::: {.explica}
+Cuatro sub-subcategorías de alto peso seguidas por separado (variaciones crudas).
 :::
 
-```{r}
-lineas_plotly(otr)
+```{ojs}
+{ const d = transpose(otrSub); const cats = [...new Set(d.map(x => x.cat))]; const col = {}; cats.forEach((c, i) => col[c] = PAL_ECH[i % PAL_ECH.length]);
+  return graficoLineas(d, cats, col, 5, "Limpieza, cuidado personal, mascotas y farmacia, por sub-subcategoría."); }
 ```
 
-::: section-lead
-Variación de la última semana:
+::: {.explica}
+Ranking de la última semana:
 :::
 
-```{r}
-barras_plotly(otr, ml = 170, alto = 270)
+```{ojs}
+graficoBarras(transpose(otrVar).map(d => ({cat: d.cat, valor: +d.valor})), 6, "Otras categorías: variación de la última semana.")
+```
+::: {.nota}
+Rojo: suba de precios · Verde: baja.
+:::
+
+::: {.kicker}
+Mapa de calor
+:::
+## Qué se movió y cuándo
+
+::: {.explica}
+Cada celda es la variación de una sub-subcategoría en una semana, para las dos
+cadenas juntas. Rojo = subió, verde = bajó. Se muestran las últimas semanas,
+ordenadas por cuánto acumularon.
+:::
+
+```{ojs}
+graficoHeatmap(transpose(heat).map(d => ({cat: d.cat, fecha: d.fecha, var: +d.var})), 7, "Mapa de calor: variación semanal por sub-subcategoría.")
 ```
 
-::: kicker
+::: {.kicker}
+Extra
+:::
+## ¿Qué empujó el índice?
+
+::: {.explica}
+No es lo mismo *qué subió más* que *qué movió el número*: una categoría de mucho
+peso mueve el índice aunque cambie poco. Acá, la contribución de cada rubro a la
+variación de la última semana, en puntos porcentuales.
+:::
+
+```{ojs}
+graficoBarras(transpose(incid).map(d => ({cat: d.cat, valor: +d.valor})), 8, "Contribución de cada rubro a la variación semanal del índice general.", {xlabel: "Contribución (pp)", suf: " pp"})
+```
+::: {.nota}
+Rojo: empujó los precios hacia arriba · Verde: hacia abajo.
+:::
+
+## Distribución de los cambios de precio
+
+::: {.explica}
+A nivel producto: de los SKU que cambiaron de precio esta semana, cuántos lo
+hicieron y en qué magnitud. La mayoría no se mueve cada semana; los que sí, se
+reparten entre subas y bajas.
+:::
+
+```{ojs}
+graficoHistograma(transpose(distrib).map(d => ({delta: +d.delta, signo: d.signo})), 9, "Distribución de los cambios de precio a nivel producto.")
+```
+
+::: {.kicker}
 Metodología
 :::
 ## Cómo se construye el índice
 
-::: method
-::: step
-::: n
+::: {.method}
+::: {.step}
+::: {.n}
 1
 :::
-::: t
+::: {.t}
 Relevamiento
 :::
-::: d
-Scraping semanal de La Anónima y El Todo, clasificado en COICOP. Se excluyen sub-subcategorías sin correspondencia entre cadenas.
+::: {.d}
+Scraping semanal de La Anónima y El Todo, clasificado en COICOP. Se excluyen sub-subcategorías sin correspondencia entre cadenas y artículos sin precio.
 :::
 :::
-::: step
-::: n
+::: {.step}
+::: {.n}
 2
 :::
-::: t
+::: {.t}
 Índice elemental
 :::
-::: d
+::: {.d}
 Jevons (media geométrica de relativos) por sub-subcategoría, encadenado (base 100). Faltantes rellenados con la semana contigua.
 :::
 :::
-::: step
-::: n
+::: {.step}
+::: {.n}
 3
 :::
-::: t
+::: {.t}
 Ponderación
 :::
-::: d
+::: {.d}
 El índice general y el de alimentos agregan los elementales como promedio ponderado por la canasta correspondiente.
 :::
 :::
-::: step
-::: n
+::: {.step}
+::: {.n}
 4
 :::
-::: t
+::: {.t}
 Cortes
 :::
-::: d
-Por cadena y por sub-subcategoría; el resto de las categorías se sigue con variaciones crudas.
+::: {.d}
+Por cadena, por sub-subcategoría, mapa de calor, incidencia por rubro y distribución de cambios a nivel producto.
 :::
 :::
 :::
 
-::: pagefooter
-Monitor de precios de supermercados de Bariloche · Elaboración propia. Índice
-Jevons encadenado con agregación ponderada por canasta.
+::: {.zona-azul}
+**Monitor de precios de supermercados de Bariloche** · Elaboración propia.
+Índice Jevons encadenado con agregación ponderada por canasta. Los valores son
+variaciones respecto del relevamiento anterior.
 :::

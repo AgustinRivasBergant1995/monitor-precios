@@ -6,9 +6,15 @@ format:
     page-layout: article
     toc: false
     title-block-style: none
-    google-analytics: "G-X4JGBNYMG9"
     include-in-header:
       text: |
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-X4JGBNYMG9"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-X4JGBNYMG9');
+        </script>
         <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
 execute:
   echo: false

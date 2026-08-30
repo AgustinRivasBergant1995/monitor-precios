@@ -6,6 +6,7 @@ format:
     page-layout: article
     toc: false
     title-block-style: none
+    google-analytics: "G-X4JGBNYMG9"
     include-in-header:
       text: |
         <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
@@ -453,10 +454,21 @@ El índice general y el de alimentos agregan los elementales como promedio ponde
 4
 :::
 ::: {.t}
-Cortes
+Actualización
 :::
 ::: {.d}
-Por cadena, por subcategoría, mapa de calor, incidencia por rubro y distribución de cambios a nivel producto.
+Todos los jueves.
+:::
+:::
+::: {.step}
+::: {.n}
+5
+:::
+::: {.t}
+Próximos pasos
+:::
+::: {.d}
+Extender el relevamiento al resto de capitulos para crear un IPC para la ciudad.
 :::
 :::
 :::
